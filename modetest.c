@@ -120,18 +120,6 @@ void print_mode(GSGLOBAL *gsGlobal) {
            gsGlobal->CurrentPointer / 1024);
 }
 
-// Conditional render function
-void render(GSGLOBAL *gsGlobal) {
-    switch (iCurrentPattern) {
-        case PATTERN_CHECKERBOARD:
-            render_checkerboard(GSGLOBAL);
-            break;
-        case PATTERN_WHITESCREEN:
-            render_whitescreen(GSGLOBAL);
-            break;
-    }
-}
-
 // Render function for checkerboard pattern
 void render_checkerboard(GSGLOBAL *gsGlobal) {
     const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
@@ -175,6 +163,18 @@ void render_whitescreen(GSGLOBAL *gsGlobal) {
     gsKit_queue_exec(gsGlobal);
 }
 
+// Conditional render function
+void render(GSGLOBAL *gsGlobal) {
+    switch (iCurrentPattern) {
+        case PATTERN_CHECKERBOARD:
+            render_checkerboard(gsGlobal);
+            break;
+        case PATTERN_WHITESCREEN:
+            render_whitescreen(gsGlobal);
+            break;
+    }
+}
+
 // Get Pad Input
 void get_pad(GSGLOBAL *gsGlobal) {
     struct padButtonStatus buttons;
@@ -199,7 +199,7 @@ void get_pad(GSGLOBAL *gsGlobal) {
             iCurrentMode = (iCurrentMode + (modesCount - 1)) % modesCount;  // To wrap around correctly when decrementing
             iModeChange = 1;
         }
-        if (new_pad & PAD_X) {
+        if (new_pad & PAD_CROSS) {
             iCurrentPattern = (iCurrentPattern + 1) % 2;
             iModeChange = 1;
         }
