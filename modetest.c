@@ -37,13 +37,17 @@ struct SMode modes[] = {
     { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512,  512},
     { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  512,  288},
     { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  320,  288},
-    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  256,  288},
-
+    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  256,  288}
 };
 
+size_t modesCount = sizeof(modes);
 int iCurrentMode = 0;
 struct SMode *pCurrentMode = &modes[0];
 int iModeChange = 1;
+
+const int PATTERN_CHECKERBOARD = 0;
+const int PATTERN_WHITESCREEN = 1;
+int iCurrentPattern = PATTERN_CHECKERBOARD;
 
 // Load Modules
 static void loadModules(void) {
@@ -116,8 +120,20 @@ void print_mode(GSGLOBAL *gsGlobal) {
            gsGlobal->CurrentPointer / 1024);
 }
 
-// Render function
+// Conditional render function
 void render(GSGLOBAL *gsGlobal) {
+    switch (iCurrentPattern) {
+        case PATTERN_CHECKERBOARD:
+            render_checkerboard(GSGLOBAL);
+            break;
+        case PATTERN_WHITESCREEN:
+            render_whitescreen(GSGLOBAL);
+            break;
+    }
+}
+
+// Render function for checkerboard pattern
+void render_checkerboard(GSGLOBAL *gsGlobal) {
     const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
     const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
 
@@ -132,6 +148,27 @@ void render(GSGLOBAL *gsGlobal) {
         for (float x = 0; x < gsGlobal->Width; x += pixelSize) {
             u64 color = ((int)x + (int)y) % 2 == 0 ? clWhite : clBlack;
             gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, color);
+        }
+    }
+
+    gsKit_queue_exec(gsGlobal);
+}
+
+// Render function for white screen
+void render_whitescreen(GSGLOBAL *gsGlobal) {
+    const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
+    const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
+
+    gsKit_queue_reset(gsGlobal->Per_Queue);
+
+    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
+    gsKit_clear(gsGlobal, clBlack);
+
+    float pixelSize = 1.0f;
+
+    for (float y = 0; y < gsGlobal->Height; y += pixelSize) {
+        for (float x = 0; x < gsGlobal->Width; x += pixelSize) {
+            gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, clWhite);
         }
     }
 
@@ -155,11 +192,15 @@ void get_pad(GSGLOBAL *gsGlobal) {
         old_pad = paddata;
 
         if (new_pad & PAD_R1) {
-            iCurrentMode = (iCurrentMode + 1) % 9;
+            iCurrentMode = (iCurrentMode + 1) % modesCount;
             iModeChange = 1;
         }
         if (new_pad & PAD_L1) {
-            iCurrentMode = (iCurrentMode + 8) % 9;  // To wrap around correctly when decrementing
+            iCurrentMode = (iCurrentMode + (modesCount - 1)) % modesCount;  // To wrap around correctly when decrementing
+            iModeChange = 1;
+        }
+        if (new_pad & PAD_X) {
+            iCurrentPattern = (iCurrentPattern + 1) % 2;
             iModeChange = 1;
         }
     }
