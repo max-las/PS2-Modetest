@@ -29,13 +29,16 @@ struct SMode modes[] = {
     { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  640,  448},
     { "480i", GS_MODE_NTSC,      GS_INTERLACED,    GS_FIELD,  512,  448},
     { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  512,  448},
-    // PAL
-    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  640,  512},
-    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512,  512},
-    // PS1
     { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  512,  240},
     { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  320,  240},
     { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  256,  240},
+    // PAL
+    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  640,  512},
+    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512,  512},
+    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  512,  288},
+    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  320,  288},
+    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  256,  288},
+
 };
 
 int iCurrentMode = 0;
