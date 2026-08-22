@@ -7,6 +7,12 @@
 #include <dmaKit.h>
 #include <libpad.h>
 
+#define PATTERN_CHECKERBOARD 0
+#define PATTERN_WHITESCREEN 1
+#define PATTERNS_COUNT 2
+
+#define MODES_COUNT 12
+
 static char padBuf[256] __attribute__((aligned(64)));
 static char actAlign[6];
 static int actuators;
@@ -23,7 +29,7 @@ struct SMode {
     int Height;
 };
 
-struct SMode modes[] = {
+struct SMode modes[MODES_COUNT] = {
     // NTSC
     { "480i", GS_MODE_NTSC,      GS_INTERLACED,    GS_FIELD,  640,  448},
     { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  640,  448},
@@ -40,14 +46,10 @@ struct SMode modes[] = {
     { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  256,  288}
 };
 
-size_t modesCount = sizeof(modes);
 int iCurrentMode = 0;
 struct SMode *pCurrentMode = &modes[0];
-int iModeChange = 1;
-
-const int PATTERN_CHECKERBOARD = 0;
-const int PATTERN_WHITESCREEN = 1;
 int iCurrentPattern = PATTERN_CHECKERBOARD;
+int iDisplayChange = 1;
 
 // Load Modules
 static void loadModules(void) {
@@ -192,16 +194,20 @@ void get_pad(GSGLOBAL *gsGlobal) {
         old_pad = paddata;
 
         if (new_pad & PAD_R1) {
-            iCurrentMode = (iCurrentMode + 1) % modesCount;
-            iModeChange = 1;
+            iCurrentMode = (iCurrentMode + 1) % MODES_COUNT;
+            iDisplayChange = 1;
         }
         if (new_pad & PAD_L1) {
-            iCurrentMode = (iCurrentMode + (modesCount - 1)) % modesCount;  // To wrap around correctly when decrementing
-            iModeChange = 1;
+            iCurrentMode = (iCurrentMode + (MODES_COUNT - 1)) % MODES_COUNT;  // To wrap around correctly when decrementing
+            iDisplayChange = 1;
         }
-        if (new_pad & PAD_CROSS) {
-            iCurrentPattern = (iCurrentPattern + 1) % 2;
-            iModeChange = 1;
+        if (new_pad & PAD_R2) {
+            iCurrentPattern = (iCurrentPattern + 1) % PATTERNS_COUNT;
+            iDisplayChange = 1;
+        }
+        if (new_pad & PAD_L2) {
+            iCurrentPattern = (iCurrentPattern + (PATTERNS_COUNT - 1)) % PATTERNS_COUNT;
+            iDisplayChange = 1;
         }
     }
 }
@@ -219,8 +225,8 @@ int main(int argc, char *argv[]) {
     gsGlobal->ZBuffering = GS_SETTING_OFF;
 
     while (1) {
-        if (iModeChange != 0) {
-            iModeChange = 0;
+        if (iDisplayChange != 0) {
+            iDisplayChange = 0;
             pCurrentMode = &modes[iCurrentMode];
 
             gsGlobal->PSM = GS_PSM_CT16;
