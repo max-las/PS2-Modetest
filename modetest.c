@@ -7,11 +7,8 @@
 #include <dmaKit.h>
 #include <libpad.h>
 
-#define PATTERN_CHECKERBOARD 0
-#define PATTERN_WHITESCREEN 1
-#define PATTERNS_COUNT 2
-
-#define MODES_COUNT 12
+#define VIDEO_MODES_COUNT 5
+#define PATTERN_MODES_COUNT 5
 
 static char padBuf[256] __attribute__((aligned(64)));
 static char actAlign[6];
@@ -20,36 +17,47 @@ static int actuators;
 int port, slot;
 u32 old_pad = 0;
 
-struct SMode {
-    const char *sMode;
+struct SVideoMode {
+    const char *sVideoMode;
     s16 Mode;
     s16 Interlace;
     s16 Field;
-    int Width;
-    int Height;
+    u16 Height;
 };
 
-struct SMode modes[MODES_COUNT] = {
+enum Pattern {
+    CHECKERBOARD,
+    WHITESCREEN
+};
+
+struct SPatternMode {
+    enum Pattern Pattern;
+    u16 Width;
+};
+
+struct SVideoMode videoModes[VIDEO_MODES_COUNT] = {
     // NTSC
-    { "480i", GS_MODE_NTSC,      GS_INTERLACED,    GS_FIELD,  640,  448},
-    { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  640,  448},
-    { "480i", GS_MODE_NTSC,      GS_INTERLACED,    GS_FIELD,  512,  448},
-    { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  512,  448},
-    { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  512,  240},
-    { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  320,  240},
-    { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  256,  240},
+    { "480i", GS_MODE_NTSC,      GS_INTERLACED,    GS_FIELD,  448},
+    { "480p", GS_MODE_DTV_480P,  GS_NONINTERLACED, GS_FRAME,  448},
+    { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  240},
     // PAL
-    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  640,  512},
-    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512,  512},
-    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  512,  288},
-    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  320,  288},
-    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  256,  288}
+    { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512},
+    { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  288}
 };
 
-int iCurrentMode = 0;
-struct SMode *pCurrentMode = &modes[0];
-int iCurrentPattern = PATTERN_CHECKERBOARD;
-int iDisplayChange = 1;
+struct SPatternMode patternModes[PATTERN_MODES_COUNT] = {
+    { CHECKERBOARD, 640},
+    { CHECKERBOARD, 512},
+    { CHECKERBOARD, 320},
+    { CHECKERBOARD, 256},
+    { WHITESCREEN, 512}
+};
+
+u8 iCurrentVideoMode = 0;
+struct SVideoMode *pCurrentVideoMode = &videoModes[0];
+u8 iCurrentPatternMode = 0;
+struct SPatternMode *pCurrentPatternMode = &patternModes[0];
+u8 iModeChange = 1;
 
 // Load Modules
 static void loadModules(void) {
@@ -112,26 +120,28 @@ void pad_init() {
     waitPadReady(port, slot);
 }
 
+const char *current_pattern_label() {
+    switch (pCurrentPatternMode->Pattern) {
+        case(CHECKERBOARD): return "checkerboard";
+        case(WHITESCREEN): return "whitescreen";
+    }
+}
+
 // Print display mode
 void print_mode(GSGLOBAL *gsGlobal) {
-    printf("Mode: %s %dx%d %s memory: %dKiB\n",
-           pCurrentMode->sMode,
+    printf("Mode: %s %s %dx%d %s memory: %dKiB\n",
+           current_pattern_label(),
+           pCurrentVideoMode->sVideoMode,
            gsGlobal->Width,
            gsGlobal->Height,
-           pCurrentMode->Field == GS_FRAME ? "GS_FRAME" : "GS_FIELD",
+           pCurrentVideoMode->Field == GS_FRAME ? "GS_FRAME" : "GS_FIELD",
            gsGlobal->CurrentPointer / 1024);
 }
 
-// Render function for checkerboard pattern
-void render_checkerboard(GSGLOBAL *gsGlobal) {
-    const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
-    const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
+const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
+const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
 
-    gsKit_queue_reset(gsGlobal->Per_Queue);
-
-    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
-    gsKit_clear(gsGlobal, clBlack);
-
+void draw_checkerboard(GSGLOBAL *gsGlobal) {
     float pixelSize = 1.0f;
 
     for (float y = 0; y < gsGlobal->Height; y += pixelSize) {
@@ -140,20 +150,9 @@ void render_checkerboard(GSGLOBAL *gsGlobal) {
             gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, color);
         }
     }
-
-    gsKit_queue_exec(gsGlobal);
 }
 
-// Render function for white screen
-void render_whitescreen(GSGLOBAL *gsGlobal) {
-    const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
-    const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
-
-    gsKit_queue_reset(gsGlobal->Per_Queue);
-
-    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
-    gsKit_clear(gsGlobal, clBlack);
-
+void draw_whitescreen(GSGLOBAL *gsGlobal) {
     float pixelSize = 1.0f;
 
     for (float y = 0; y < gsGlobal->Height; y += pixelSize) {
@@ -161,20 +160,25 @@ void render_whitescreen(GSGLOBAL *gsGlobal) {
             gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, clWhite);
         }
     }
-
-    gsKit_queue_exec(gsGlobal);
 }
 
-// Conditional render function
+// Render function
 void render(GSGLOBAL *gsGlobal) {
-    switch (iCurrentPattern) {
-        case PATTERN_CHECKERBOARD:
-            render_checkerboard(gsGlobal);
+    gsKit_queue_reset(gsGlobal->Per_Queue);
+
+    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
+    gsKit_clear(gsGlobal, clBlack);
+
+    switch (pCurrentPatternMode->Pattern) {
+        case(CHECKERBOARD):
+            draw_checkerboard(gsGlobal);
             break;
-        case PATTERN_WHITESCREEN:
-            render_whitescreen(gsGlobal);
+        case(WHITESCREEN):
+            draw_whitescreen(gsGlobal);
             break;
     }
+
+    gsKit_queue_exec(gsGlobal);
 }
 
 // Get Pad Input
@@ -194,20 +198,20 @@ void get_pad(GSGLOBAL *gsGlobal) {
         old_pad = paddata;
 
         if (new_pad & PAD_R1) {
-            iCurrentMode = (iCurrentMode + 1) % MODES_COUNT;
-            iDisplayChange = 1;
+            iCurrentVideoMode = (iCurrentVideoMode + 1) % VIDEO_MODES_COUNT;
+            iModeChange = 1;
         }
         if (new_pad & PAD_L1) {
-            iCurrentMode = (iCurrentMode + (MODES_COUNT - 1)) % MODES_COUNT;  // To wrap around correctly when decrementing
-            iDisplayChange = 1;
+            iCurrentVideoMode = (iCurrentVideoMode + (VIDEO_MODES_COUNT - 1)) % VIDEO_MODES_COUNT;
+            iModeChange = 1;
         }
         if (new_pad & PAD_R2) {
-            iCurrentPattern = (iCurrentPattern + 1) % PATTERNS_COUNT;
-            iDisplayChange = 1;
+            iCurrentPatternMode = (iCurrentPatternMode + 1) % PATTERN_MODES_COUNT;
+            iModeChange = 1;
         }
         if (new_pad & PAD_L2) {
-            iCurrentPattern = (iCurrentPattern + (PATTERNS_COUNT - 1)) % PATTERNS_COUNT;
-            iDisplayChange = 1;
+            iCurrentPatternMode = (iCurrentPatternMode + (PATTERN_MODES_COUNT - 1)) % PATTERN_MODES_COUNT;
+            iModeChange = 1;
         }
     }
 }
@@ -225,18 +229,19 @@ int main(int argc, char *argv[]) {
     gsGlobal->ZBuffering = GS_SETTING_OFF;
 
     while (1) {
-        if (iDisplayChange != 0) {
-            iDisplayChange = 0;
-            pCurrentMode = &modes[iCurrentMode];
+        if (iModeChange != 0) {
+            iModeChange = 0;
+            pCurrentVideoMode = &videoModes[iCurrentVideoMode];
+            pCurrentPatternMode = &patternModes[iCurrentPatternMode];
 
             gsGlobal->PSM = GS_PSM_CT16;
             gsGlobal->PSMZ = GS_PSMZ_16;
-            gsGlobal->Mode = pCurrentMode->Mode;
-            gsGlobal->Interlace = pCurrentMode->Interlace;
-            gsGlobal->Field = pCurrentMode->Field;
-            gsGlobal->Width = pCurrentMode->Width;
-            gsGlobal->Height = (pCurrentMode->Interlace == GS_INTERLACED && pCurrentMode->Field == GS_FRAME) ?
-                               pCurrentMode->Height / 2 : pCurrentMode->Height;
+            gsGlobal->Mode = pCurrentVideoMode->Mode;
+            gsGlobal->Interlace = pCurrentVideoMode->Interlace;
+            gsGlobal->Field = pCurrentVideoMode->Field;
+            gsGlobal->Width = pCurrentPatternMode->Width;
+            gsGlobal->Height = (pCurrentVideoMode->Interlace == GS_INTERLACED && pCurrentVideoMode->Field == GS_FRAME) ?
+                               pCurrentVideoMode->Height / 2 : pCurrentVideoMode->Height;
 
             gsKit_vram_clear(gsGlobal);
             gsKit_init_screen(gsGlobal);
