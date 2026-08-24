@@ -7,7 +7,7 @@
 #include <dmaKit.h>
 #include <libpad.h>
 
-#define VIDEO_MODES_COUNT 5
+#define VIDEO_MODES_COUNT 6
 #define PATTERN_MODES_COUNT 5
 
 static char padBuf[256] __attribute__((aligned(64)));
@@ -42,6 +42,7 @@ struct SVideoMode videoModes[VIDEO_MODES_COUNT] = {
     { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  240},
     // PAL
     { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512},
+    { "576p", GS_MODE_DTV_576P,  GS_NONINTERLACED, GS_FRAME,  512},
     { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  288}
 };
 
@@ -153,13 +154,7 @@ void draw_checkerboard(GSGLOBAL *gsGlobal) {
 }
 
 void draw_whitescreen(GSGLOBAL *gsGlobal) {
-    float pixelSize = 1.0f;
-
-    for (float y = 0; y < gsGlobal->Height; y += pixelSize) {
-        for (float x = 0; x < gsGlobal->Width; x += pixelSize) {
-            gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, clWhite);
-        }
-    }
+    gsKit_clear(gsGlobal, clWhite);
 }
 
 // Render function
@@ -197,19 +192,19 @@ void get_pad(GSGLOBAL *gsGlobal) {
         new_pad = paddata & ~old_pad;
         old_pad = paddata;
 
-        if (new_pad & PAD_R1) {
+        if (new_pad & PAD_R2) {
             iCurrentVideoMode = (iCurrentVideoMode + 1) % VIDEO_MODES_COUNT;
             iModeChange = 1;
         }
-        if (new_pad & PAD_L1) {
+        if (new_pad & PAD_L2) {
             iCurrentVideoMode = (iCurrentVideoMode + (VIDEO_MODES_COUNT - 1)) % VIDEO_MODES_COUNT;
             iModeChange = 1;
         }
-        if (new_pad & PAD_R2) {
+        if (new_pad & PAD_CIRCLE) {
             iCurrentPatternMode = (iCurrentPatternMode + 1) % PATTERN_MODES_COUNT;
             iModeChange = 1;
         }
-        if (new_pad & PAD_L2) {
+        if (new_pad & PAD_SQUARE) {
             iCurrentPatternMode = (iCurrentPatternMode + (PATTERN_MODES_COUNT - 1)) % PATTERN_MODES_COUNT;
             iModeChange = 1;
         }
