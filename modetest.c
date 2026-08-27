@@ -7,7 +7,7 @@
 #include <dmaKit.h>
 #include <libpad.h>
 
-#define VIDEO_MODES_COUNT 6
+#define VIDEO_MODES_COUNT 5
 #define PATTERN_MODES_COUNT 5
 
 static char padBuf[256] __attribute__((aligned(64)));
@@ -42,7 +42,6 @@ struct SVideoMode videoModes[VIDEO_MODES_COUNT] = {
     { "240p", GS_MODE_NTSC,      GS_NONINTERLACED, GS_FRAME,  240},
     // PAL
     { "576i", GS_MODE_PAL,       GS_INTERLACED,    GS_FIELD,  512},
-    { "576p", GS_MODE_DTV_576P,  GS_NONINTERLACED, GS_FRAME,  512},
     { "288p", GS_MODE_PAL,       GS_NONINTERLACED, GS_FRAME,  288}
 };
 
@@ -125,6 +124,7 @@ const char *current_pattern_label() {
     switch (pCurrentPatternMode->Pattern) {
         case(CHECKERBOARD): return "checkerboard";
         case(WHITESCREEN): return "whitescreen";
+        default: return "unexpected";
     }
 }
 
