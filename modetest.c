@@ -6,9 +6,19 @@
 #include <gsKit.h>
 #include <dmaKit.h>
 #include <libpad.h>
+#include <gsToolkit.h>
+#include <string.h>
+#include <timer.h>
+#include "font.h"
 
 #define VIDEO_MODES_COUNT 5
 #define PATTERN_MODES_COUNT 5
+
+extern void custom_gsKit_font_print_scaled(GSGLOBAL *gsGlobal, GSFONT *gsFont, float X, float Y, int Z,
+                                           float scaleX, float scaleY, unsigned long color, const char *String);
+
+extern unsigned char _binary_unscii_8_fnt_start[];
+extern const unsigned char _binary_unscii_8_fnt_size[];
 
 static char padBuf[256] __attribute__((aligned(64)));
 static char actAlign[6];
@@ -139,17 +149,57 @@ void print_mode(GSGLOBAL *gsGlobal) {
            gsGlobal->CurrentPointer / 1024);
 }
 
+void flush_queue(GSGLOBAL *gsGlobal) {
+    gsKit_queue_exec(gsGlobal);
+    gsKit_finish();
+    gsKit_queue_reset(gsGlobal->Per_Queue);
+}
+
 const u64 clWhite = GS_SETREG_RGBAQ(255, 255, 255, 0, 0);
 const u64 clBlack = GS_SETREG_RGBAQ(0, 0, 0, 0, 0);
+const u64 clYellow = GS_SETREG_RGBAQ(255, 255, 0, 0, 0);
+
+char mode_str[30];
+
+void show_mode(GSGLOBAL *gsGlobal, GSFONT *gsFont) {
+    sprintf(mode_str, "%s %s %dx%d",
+            pCurrentVideoMode->sVideoMode,
+            current_pattern_label(),
+            gsGlobal->Width,
+            gsGlobal->Height);
+
+    float native_box_width = 210.0f;
+    float box_proportional_width = native_box_width / 256.0f;
+    float box_width = gsGlobal->Width * box_proportional_width;
+    float scale_x = box_width / native_box_width;
+
+    float native_box_height = 10.0f;
+    float box_proportional_height = native_box_height / native_box_width;
+    float box_height = gsGlobal->Height * box_proportional_height;
+    float scale_y = box_height / native_box_height;
+
+    float box_x1 = (gsGlobal->Width - box_width) / 2;
+    float box_x2 = gsGlobal->Width - box_x1;
+    float box_y1 = (gsGlobal->Height - box_height) / 2;
+    float box_y2 = gsGlobal->Height - box_y1;
+    gsKit_prim_sprite(gsGlobal, box_x1, box_y1, box_x2, box_y2, 2, clBlack);
+
+    float native_text_width = gsFont->CharWidth * strlen(mode_str);
+    float native_text_height = gsFont->CharHeight;
+    float text_width = native_text_width * scale_x;
+    float text_height = native_text_height * scale_y;
+    float text_x = (gsGlobal->Width / 2.0f) - (text_width / 2.0f);
+    float text_y = (gsGlobal->Height / 2.0f) - (text_height / 2.0f);
+    custom_gsKit_font_print_scaled(gsGlobal, gsFont, text_x, text_y, 3, scale_x, scale_y, clYellow, mode_str);
+}
 
 void draw_checkerboard(GSGLOBAL *gsGlobal) {
-    float pixelSize = 1.0f;
-
-    for (float y = 0; y < gsGlobal->Height; y += pixelSize) {
-        for (float x = 0; x < gsGlobal->Width; x += pixelSize) {
-            u64 color = ((int)x + (int)y) % 2 == 0 ? clWhite : clBlack;
-            gsKit_prim_sprite(gsGlobal, x, y, x + pixelSize, y + pixelSize, 1, color);
+    for (u16 y = 0; y < gsGlobal->Height; y++) {
+        for (u16 x = 0; x < gsGlobal->Width; x++) {
+            u64 color = (x + y) % 2 == 0 ? clWhite : clBlack;
+            gsKit_prim_point(gsGlobal, x, y, 1, color);
         }
+        if ((y > 0) && ((y % 10) == 0)) flush_queue(gsGlobal);
     }
 }
 
@@ -157,12 +207,31 @@ void draw_whitescreen(GSGLOBAL *gsGlobal) {
     gsKit_clear(gsGlobal, clWhite);
 }
 
-// Render function
-void render(GSGLOBAL *gsGlobal) {
-    gsKit_queue_reset(gsGlobal->Per_Queue);
+u8 iShowMode = 1;
+u8 iModeVisibilityChange = 0;
+s32 hideModeTimerId = -1;
 
+u64 hide_mode(s32 id, u64 scheduled_time, u64 actual_time, void *arg, void *pc_value) {
+    iShowMode = 0;
+    iModeVisibilityChange = 1;
+    return 0;
+}
+
+void set_hide_mode_timer() {
+    hideModeTimerId = AllocTimerCounter();
+    StartTimerCounter(hideModeTimerId);
+    SetTimerHandler(hideModeTimerId, Sec2TimerBusClock(3), hide_mode, NULL);
+}
+
+void unset_hide_mode_timer() {
+    StopTimerCounter(hideModeTimerId);
+    FreeTimerCounter(hideModeTimerId);
+}
+
+// Render function
+void render(GSGLOBAL *gsGlobal, GSFONT *gsFont) {
     gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
-    gsKit_clear(gsGlobal, clBlack);
+    gsKit_queue_reset(gsGlobal->Per_Queue);
 
     switch (pCurrentPatternMode->Pattern) {
         case(CHECKERBOARD):
@@ -171,6 +240,11 @@ void render(GSGLOBAL *gsGlobal) {
         case(WHITESCREEN):
             draw_whitescreen(gsGlobal);
             break;
+    }
+
+    if (iShowMode) {
+        flush_queue(gsGlobal);
+        show_mode(gsGlobal, gsFont);
     }
 
     gsKit_queue_exec(gsGlobal);
@@ -208,11 +282,18 @@ void get_pad(GSGLOBAL *gsGlobal) {
             iCurrentPatternMode = (iCurrentPatternMode + (PATTERN_MODES_COUNT - 1)) % PATTERN_MODES_COUNT;
             iModeChange = 1;
         }
+        if (new_pad & PAD_CROSS) {
+            iShowMode = 1;
+            iModeVisibilityChange = 1;
+            unset_hide_mode_timer();
+            set_hide_mode_timer();
+        }
     }
 }
 
 int main(int argc, char *argv[]) {
     GSGLOBAL *gsGlobal = gsKit_init_global();
+    GSFONT *gsFont = gsKit_init_font_raw(GSKIT_FTYPE_FNT, _binary_unscii_8_fnt_start, (int)_binary_unscii_8_fnt_size);
 
     pad_init();
 
@@ -224,8 +305,11 @@ int main(int argc, char *argv[]) {
     gsGlobal->ZBuffering = GS_SETTING_OFF;
 
     while (1) {
-        if (iModeChange != 0) {
+        if (iModeChange) {
             iModeChange = 0;
+            iShowMode = 1;
+            unset_hide_mode_timer();
+
             pCurrentVideoMode = &videoModes[iCurrentVideoMode];
             pCurrentPatternMode = &patternModes[iCurrentPatternMode];
 
@@ -240,10 +324,17 @@ int main(int argc, char *argv[]) {
 
             gsKit_vram_clear(gsGlobal);
             gsKit_init_screen(gsGlobal);
+            gsKit_font_upload_raw(gsGlobal, gsFont);
 
             print_mode(gsGlobal);
+            render(gsGlobal, gsFont);
 
-            render(gsGlobal);
+            set_hide_mode_timer();
+        }
+
+        if (iModeVisibilityChange) {
+            iModeVisibilityChange = 0;
+            render(gsGlobal, gsFont);
         }
 
         gsKit_sync_flip(gsGlobal);
